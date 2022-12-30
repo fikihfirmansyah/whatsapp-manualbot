@@ -33,22 +33,6 @@ Sentry.init({
   tracesSampleRate: 1.0,
 });
 
-const transaction = Sentry.startTransaction({
-  op: "test",
-  name: "My First Test Transaction",
-});
-
-setTimeout(() => {
-  try {
-    foo();
-  } catch (e) {
-    Sentry.captureException(e);
-  } finally {
-    transaction.finish();
-  }
-}, 99);
-
-
 app.use(express.json());
 app.use(express.urlencoded({
   extended: true
@@ -114,41 +98,41 @@ client.on('message', msg => {
   // NOTE!
   // UNCOMMENT THE SCRIPT BELOW IF YOU WANT TO SAVE THE MESSAGE MEDIA FILES
   // Downloading media
-  // if (msg.hasMedia) {
-  //   msg.downloadMedia().then(media => {
-  //     // To better understanding
-  //     // Please look at the console what data we get
-  //     console.log(media);
+  if (msg.hasMedia) {
+    msg.downloadMedia().then(media => {
+      // To better understanding
+      // Please look at the console what data we get
+      console.log(media);
 
-  //     if (media) {
-  //       // The folder to store: change as you want!
-  //       // Create if not exists
-  //       const mediaPath = './downloaded-media/';
+      if (media) {
+        // The folder to store: change as you want!
+        // Create if not exists
+        const mediaPath = './downloaded-media/';
 
-  //       if (!fs.existsSync(mediaPath)) {
-  //         fs.mkdirSync(mediaPath);
-  //       }
+        if (!fs.existsSync(mediaPath)) {
+          fs.mkdirSync(mediaPath);
+        }
 
-  //       // Get the file extension by mime-type
-  //       const extension = mime.extension(media.mimetype);
+        // Get the file extension by mime-type
+        const extension = mime.extension(media.mimetype);
         
-  //       // Filename: change as you want! 
-  //       // I will use the time for this example
-  //       // Why not use media.filename? Because the value is not certain exists
-  //       const filename = new Date().getTime();
+        // Filename: change as you want! 
+        // I will use the time for this example
+        // Why not use media.filename? Because the value is not certain exists
+        const filename = new Date().getTime();
 
-  //       const fullFilename = mediaPath + filename + '.' + extension;
+        const fullFilename = mediaPath + filename + '.' + extension;
 
-  //       // Save to file
-  //       try {
-  //         fs.writeFileSync(fullFilename, media.data, { encoding: 'base64' }); 
-  //         console.log('File downloaded successfully!', fullFilename);
-  //       } catch (err) {
-  //         console.log('Failed to save the file:', err);
-  //       }
-  //     }
-  //   });
-  // }
+        // Save to file
+        try {
+          fs.writeFileSync(fullFilename, media.data, { encoding: 'base64' }); 
+          console.log('File downloaded successfully!', fullFilename);
+        } catch (err) {
+          console.log('Failed to save the file:', err);
+        }
+      }
+    });
+  }
 });
 
 client.initialize();
@@ -156,32 +140,38 @@ client.initialize();
 // Socket IO
 io.on('connection', function(socket) {
   socket.emit('message', 'Connecting...');
+  Sentry.captureMessage("Connecting...");
 
   client.on('qr', (qr) => {
     console.log('QR RECEIVED', qr);
     qrcode.toDataURL(qr, (err, url) => {
       socket.emit('qr', url);
       socket.emit('message', 'QR Code received, scan please!');
+      Sentry.captureMessage("QR Code received, scan please!");
     });
   });
 
   client.on('ready', () => {
     socket.emit('ready', 'Whatsapp is ready!');
     socket.emit('message', 'Whatsapp is ready!');
+    Sentry.captureMessage("Whatsapp is ready!");
   });
 
   client.on('authenticated', () => {
     socket.emit('authenticated', 'Whatsapp is authenticated!');
     socket.emit('message', 'Whatsapp is authenticated!');
     console.log('AUTHENTICATED');
+    Sentry.captureMessage("AUTHENTICATED");
   });
 
   client.on('auth_failure', function(session) {
     socket.emit('message', 'Auth failure, restarting...');
+    Sentry.captureException(new Error("Auth failure, restarting..."));
   });
 
   client.on('disconnected', (reason) => {
     socket.emit('message', 'Whatsapp is disconnected!');
+    Sentry.captureException(new Error("Whatsapp is disconnected!!"));
     client.destroy();
     client.initialize();
   });
@@ -201,10 +191,12 @@ app.post('/send-message', [
   const errors = validationResult(req).formatWith(({
     msg
   }) => {
+    Sentry.captureException(new Error(msg));
     return msg;
   });
 
   if (!errors.isEmpty()) {
+    Sentry.captureException(new Error(errors.mapped()));
     return res.status(422).json({
       status: false,
       message: errors.mapped()
@@ -217,6 +209,7 @@ app.post('/send-message', [
   const isRegisteredNumber = await checkRegisteredNumber(number);
 
   if (!isRegisteredNumber) {
+    Sentry.captureException(new Error("The number is not registered"));
     return res.status(422).json({
       status: false,
       message: 'The number is not registered'
@@ -224,11 +217,13 @@ app.post('/send-message', [
   }
 
   client.sendMessage(number, message).then(response => {
+    Sentry.captureMessage(JSON.stringify(response));
     res.status(200).json({
       status: true,
       response: response
     });
   }).catch(err => {
+    Sentry.captureException(new Error(err));
     res.status(500).json({
       status: false,
       response: err
@@ -258,11 +253,13 @@ app.post('/send-media', async (req, res) => {
   client.sendMessage(number, media, {
     caption: caption
   }).then(response => {
+    Sentry.captureMessage(JSON.stringify(response));
     res.status(200).json({
       status: true,
       response: response
     });
   }).catch(err => {
+    Sentry.captureException(new Error(err));
     res.status(500).json({
       status: false,
       response: err
@@ -284,6 +281,7 @@ const findGroupByName = async function(name) {
 app.post('/send-group-message', [
   body('id').custom((value, { req }) => {
     if (!value && !req.body.name) {
+      Sentry.captureException(new Error("Invalid value, you can use `id` or `name`"));
       throw new Error('Invalid value, you can use `id` or `name`');
     }
     return true;
@@ -293,10 +291,12 @@ app.post('/send-group-message', [
   const errors = validationResult(req).formatWith(({
     msg
   }) => {
+    Sentry.captureException(new Error(msg));
     return msg;
   });
 
   if (!errors.isEmpty()) {
+    Sentry.captureException(new Error(errors.mapped()));
     return res.status(422).json({
       status: false,
       message: errors.mapped()
@@ -311,6 +311,7 @@ app.post('/send-group-message', [
   if (!chatId) {
     const group = await findGroupByName(groupName);
     if (!group) {
+      Sentry.captureException(new Error("No group found with name: " + groupName));
       return res.status(422).json({
         status: false,
         message: 'No group found with name: ' + groupName
@@ -320,11 +321,13 @@ app.post('/send-group-message', [
   }
 
   client.sendMessage(chatId, message).then(response => {
+    Sentry.captureMessage(JSON.stringify(response));
     res.status(200).json({
       status: true,
       response: response
     });
   }).catch(err => {
+    Sentry.captureException(new Error(err));
     res.status(500).json({
       status: false,
       response: err
@@ -343,6 +346,7 @@ app.post('/clear-message', [
   });
 
   if (!errors.isEmpty()) {
+    Sentry.captureException(new Error(errors.mapped()));
     return res.status(422).json({
       status: false,
       message: errors.mapped()
@@ -350,10 +354,10 @@ app.post('/clear-message', [
   }
 
   const number = phoneNumberFormatter(req.body.number);
-
   const isRegisteredNumber = await checkRegisteredNumber(number);
 
   if (!isRegisteredNumber) {
+    Sentry.captureException(new Error("The number is not registered"));
     return res.status(422).json({
       status: false,
       message: 'The number is not registered'
@@ -363,11 +367,13 @@ app.post('/clear-message', [
   const chat = await client.getChatById(number);
   
   chat.clearMessages().then(status => {
+    Sentry.captureMessage(JSON.stringify(status));
     res.status(200).json({
       status: true,
       response: status
     });
   }).catch(err => {
+    Sentry.captureException(new Error(err));
     res.status(500).json({
       status: false,
       response: err
@@ -376,5 +382,6 @@ app.post('/clear-message', [
 });
 
 server.listen(port, function() {
+  
   console.log('App running on *: ' + port);
 });
