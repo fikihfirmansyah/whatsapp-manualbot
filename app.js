@@ -22,6 +22,7 @@ const Sentry = require("@sentry/node");
 
 const Tracing = require("@sentry/tracing");
 // or use es6 import statements
+
 // import * as Tracing from '@sentry/tracing';
 
 Sentry.init({
